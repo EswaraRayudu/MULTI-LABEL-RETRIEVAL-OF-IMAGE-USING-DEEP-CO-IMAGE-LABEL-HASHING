@@ -1,0 +1,6 @@
+For Output
+
+.\tf23_env\Scripts\Activate.ps1
+
+
+python DeepImageHashing.py

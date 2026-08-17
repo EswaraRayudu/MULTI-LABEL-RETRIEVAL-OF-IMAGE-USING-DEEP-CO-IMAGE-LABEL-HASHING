@@ -1,0 +1,2 @@
+python DeepImageHashing.py
+pause

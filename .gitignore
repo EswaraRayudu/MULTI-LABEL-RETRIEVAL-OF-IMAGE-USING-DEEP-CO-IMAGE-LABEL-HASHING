@@ -6,6 +6,3 @@ Dataset/
 Dataset.zip
 testImages/
 testImages.zip
-__pycache__/
-*.pyc
-Eswar/

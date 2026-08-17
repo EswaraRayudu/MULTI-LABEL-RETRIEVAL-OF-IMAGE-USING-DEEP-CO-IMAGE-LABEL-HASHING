@@ -1,14 +1,15 @@
 import streamlit as st
 import cv2
 import numpy as np
-import string
-import as os
-import zipfile
+import pickle
 
-from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import model_from_json
 
+
+# --------------------------------------------------
+# PAGE CONFIGURATION
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="Multi-Label Image Retrieval",
@@ -18,7 +19,9 @@ st.set_page_config(
 
 
 st.title("🖼️ Multi-Label Image Retrieval")
-st.write("Upload an image to retrieve its predicted labels.")
+st.write(
+    "Upload an image to retrieve its predicted labels."
+)
 
 
 # --------------------------------------------------
@@ -26,18 +29,28 @@ st.write("Upload an image to retrieve its predicted labels.")
 # --------------------------------------------------
 
 def hash_array_to_hash_hex(hash_array):
-    hash_array = np.array(hash_array, dtype=np.uint8)
 
-    hash_str = ''.join(
-        str(i) for i in hash_array.flatten()
+    hash_array = np.array(
+        hash_array,
+        dtype=np.uint8
     )
 
-    return hex(int(hash_str, 2))
+    hash_str = ''.join(
+        str(i)
+        for i in hash_array.flatten()
+    )
+
+    return hex(
+        int(hash_str, 2)
+    )
 
 
 def get_hash_from_image(image):
 
-    image = cv2.resize(image, (64, 64))
+    image = cv2.resize(
+        image,
+        (64, 64)
+    )
 
     image = cv2.cvtColor(
         image,
@@ -58,9 +71,13 @@ def get_hash_from_image(image):
         - dct_block[0, 0]
     ) / (dct_block.size - 1)
 
-    dct_block[dct_block < dct_average] = 0.0
+    dct_block[
+        dct_block < dct_average
+    ] = 0.0
 
-    dct_block[dct_block != 0] = 1.0
+    dct_block[
+        dct_block != 0
+    ] = 1.0
 
     hashing = hash_array_to_hash_hex(
         dct_block.flatten()
@@ -76,10 +93,16 @@ def get_hash_from_image(image):
 @st.cache(allow_output_mutation=True)
 def load_model():
 
-    with open("model/model.json", "r") as json_file:
+    with open(
+        "model/model.json",
+        "r"
+    ) as json_file:
+
         model_json = json_file.read()
 
-    model = model_from_json(model_json)
+    model = model_from_json(
+        model_json
+    )
 
     model.load_weights(
         "model/model_weights.h5"
@@ -89,96 +112,37 @@ def load_model():
 
 
 # --------------------------------------------------
-# PREPARE TOKENIZERS
+# LOAD TOKENIZERS
 # --------------------------------------------------
 
 @st.cache(allow_output_mutation=True)
 def prepare_tokenizers():
 
-    # Extract Dataset.zip if Dataset folder is not available
-    if not os.path.exists("Dataset/Images"):
-        if os.path.exists("Dataset.zip"):
-            with zipfile.ZipFile("Dataset.zip", "r") as zip_ref:
-                zip_ref.extractall(".")
+    # Load image tokenizer
+    with open(
+        "model/image_tokenizer.pkl",
+        "rb"
+    ) as file:
 
-    image_hash = []
-    image_label = []
-
-    seen = []
-
-    with open("model/captions.txt", "r") as file:
-
-        for line in file:
-
-            line = line.strip()
-
-            if not line:
-                continue
-
-            arr = line.split(",")
-
-            if len(arr) < 2:
-                continue
-
-            filename = arr[0]
-
-            if filename == "image":
-                continue
-
-            if filename in seen:
-                continue
-
-            if len(image_hash) > 130:
-                break
-
-            seen.append(filename)
-
-            caption = arr[1].strip()
-
-            image_path = "Dataset/Images/" + filename
-
-            image = cv2.imread(image_path)
-
-            if image is None:
-                continue
-
-            image_hash_value = get_hash_from_image(
-                image
-            )
-
-            image_hash.append(
-                image_hash_value
-            )
-
-            image_label.append(
-                caption
-            )
+        image_tokenizer = pickle.load(
+            file
+        )
 
 
-    # Image tokenizer
-    image_tokenizer = Tokenizer()
+    # Load label tokenizer
+    with open(
+        "model/label_tokenizer.pkl",
+        "rb"
+    ) as file:
 
-    image_tokenizer.fit_on_texts(
-        image_hash
-    )
-
-
-    # Label tokenizer
-    label_tokenizer = Tokenizer()
-
-    label_tokenizer.fit_on_texts(
-        image_label
-    )
+        label_tokenizer = pickle.load(
+            file
+        )
 
 
-    # Find maximum image sequence length
-    image_sequences = image_tokenizer.texts_to_sequences(
-        image_hash
-    )
-
-    max_image_len = int(
-        len(max(image_sequences, key=len))
-    )
+    # The trained model expects
+    # one image token as input
+    max_image_len = 1
 
 
     return (
@@ -192,21 +156,28 @@ def prepare_tokenizers():
 # PREDICT LABEL
 # --------------------------------------------------
 
-def predict_label(logits, tokenizer):
+def predict_label(
+    logits,
+    tokenizer
+):
 
     index_to_words = {
         index: word
-        for word, index in tokenizer.word_index.items()
+        for word, index
+        in tokenizer.word_index.items()
     }
 
     index_to_words[0] = ""
+
 
     predictions = np.argmax(
         logits,
         axis=1
     )
 
+
     result = []
+
 
     for prediction in predictions:
 
@@ -216,7 +187,10 @@ def predict_label(logits, tokenizer):
         )
 
         if word:
-            result.append(word)
+            result.append(
+                word
+            )
+
 
     return " ".join(result)
 
@@ -227,15 +201,24 @@ def predict_label(logits, tokenizer):
 
 uploaded_file = st.file_uploader(
     "Choose an image",
-    type=["jpg", "jpeg", "png"]
+    type=[
+        "jpg",
+        "jpeg",
+        "png"
+    ]
 )
 
 
 if uploaded_file is not None:
 
-    # Read uploaded image
+    # ----------------------------------------------
+    # READ IMAGE
+    # ----------------------------------------------
+
     file_bytes = np.asarray(
-        bytearray(uploaded_file.read()),
+        bytearray(
+            uploaded_file.read()
+        ),
         dtype=np.uint8
     )
 
@@ -245,88 +228,167 @@ if uploaded_file is not None:
     )
 
 
-    # Display image
-    st.image(
-        image,
-        caption="Uploaded Image"
-    )
+    # ----------------------------------------------
+    # CHECK IMAGE
+    # ----------------------------------------------
+
+    if image is None:
+
+        st.error(
+            "Unable to read the uploaded image."
+        )
+
+    else:
+
+        # ------------------------------------------
+        # DISPLAY IMAGE
+        # ------------------------------------------
+
+        st.image(
+            image,
+            caption="Uploaded Image"
+        )
 
 
-    # Predict button
-    if st.button("Predict Labels"):
+        # ------------------------------------------
+        # PREDICT BUTTON
+        # ------------------------------------------
 
-        with st.spinner(
-            "Processing image..."
+        if st.button(
+            "Predict Labels"
         ):
 
-            try:
+            with st.spinner(
+                "Processing image..."
+            ):
 
-                # Load trained model
-                model = load_model()
+                try:
 
+                    # ----------------------------------
+                    # LOAD MODEL
+                    # ----------------------------------
 
-                # Load tokenizers
-                (
-                    image_tokenizer,
-                    label_tokenizer,
-                    max_image_len
-                ) = prepare_tokenizers()
-
-
-                # Generate hash for uploaded image
-                image_hash = get_hash_from_image(
-                    image
-                )
+                    model = load_model()
 
 
-                # Convert hash into sequence
-                image_sequence = (
-                    image_tokenizer
-                    .texts_to_sequences(
-                        [image_hash]
+                    # ----------------------------------
+                    # LOAD TOKENIZERS
+                    # ----------------------------------
+
+                    (
+                        image_tokenizer,
+                        label_tokenizer,
+                        max_image_len
+                    ) = prepare_tokenizers()
+
+
+                    # ----------------------------------
+                    # GENERATE IMAGE HASH
+                    # ----------------------------------
+
+                    image_hash = (
+                        get_hash_from_image(
+                            image
+                        )
                     )
-                )
 
 
-                # Padding
-                image_sequence = pad_sequences(
-                    image_sequence,
-                    maxlen=max_image_len,
-                    padding="post"
-                )
+                    # ----------------------------------
+                    # CONVERT HASH TO TOKEN
+                    # ----------------------------------
+
+                    image_sequence = (
+                        image_tokenizer
+                        .texts_to_sequences(
+                            [image_hash]
+                        )
+                    )
 
 
-                # Model prediction
-                prediction = model.predict(
-                    image_sequence,
-                    verbose=0
-                )
+                    # ----------------------------------
+                    # CHECK UNKNOWN IMAGE HASH
+                    # ----------------------------------
+
+                    if (
+                        not image_sequence
+                        or not image_sequence[0]
+                    ):
+
+                        st.warning(
+                            "This image is not present "
+                            "in the trained image vocabulary."
+                        )
+
+                        st.info(
+                            "Please upload one of the "
+                            "images used during training."
+                        )
+
+                        st.stop()
 
 
-                # Convert prediction into labels
-                predicted_labels = predict_label(
-                    prediction[0],
-                    label_tokenizer
-                )
+                    # ----------------------------------
+                    # PADDING
+                    # ----------------------------------
+
+                    image_sequence = (
+                        pad_sequences(
+                            image_sequence,
+                            maxlen=max_image_len,
+                            padding="post"
+                        )
+                    )
 
 
-                st.success(
-                    "Prediction completed successfully!"
-                )
+                    # ----------------------------------
+                    # MODEL PREDICTION
+                    # ----------------------------------
+
+                    prediction = model.predict(
+                        image_sequence,
+                        verbose=0
+                    )
 
 
-                st.subheader(
-                    "Predicted Labels"
-                )
+                    # ----------------------------------
+                    # CONVERT PREDICTION TO LABELS
+                    # ----------------------------------
+
+                    predicted_labels = (
+                        predict_label(
+                            prediction[0],
+                            label_tokenizer
+                        )
+                    )
 
 
-                st.write(
-                    predicted_labels
-                )
+                    # ----------------------------------
+                    # DISPLAY RESULT
+                    # ----------------------------------
+
+                    st.success(
+                        "Prediction completed successfully!"
+                    )
+
+                    st.subheader(
+                        "Predicted Labels"
+                    )
+
+                    if predicted_labels:
+
+                        st.write(
+                            predicted_labels
+                        )
+
+                    else:
+
+                        st.info(
+                            "No labels were predicted."
+                        )
 
 
-            except Exception as e:
+                except Exception as e:
 
-                st.error(
-                    f"Error: {e}"
-                )
+                    st.error(
+                        f"Error: {e}"
+                    )

@@ -2,6 +2,8 @@ import streamlit as st
 import cv2
 import numpy as np
 import string
+import as os
+import zipfile
 
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
@@ -92,6 +94,12 @@ def load_model():
 
 @st.cache(allow_output_mutation=True)
 def prepare_tokenizers():
+
+    # Extract Dataset.zip if Dataset folder is not available
+    if not os.path.exists("Dataset/Images"):
+        if os.path.exists("Dataset.zip"):
+            with zipfile.ZipFile("Dataset.zip", "r") as zip_ref:
+                zip_ref.extractall(".")
 
     image_hash = []
     image_label = []
